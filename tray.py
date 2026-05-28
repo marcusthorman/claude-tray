@@ -6,8 +6,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QPoint, QRect, Qt, QTimer
-from PySide6.QtGui import QAction, QActionGroup, QCursor, QGuiApplication, QIcon
+from PySide6.QtCore import QPoint, Qt, QTimer
+from PySide6.QtGui import QAction, QActionGroup, QIcon
 from PySide6.QtWidgets import (
     QApplication,
     QHBoxLayout,
@@ -57,24 +57,17 @@ class HudApp:
         self.timer.timeout.connect(self.refresh)
         self.timer.start(int(self.cfg["refresh_seconds"]) * 1000)
 
-        # Hover-mode polling: KDE doesn't give us tray-icon hover events, so we
-        # poll cursor position against the panel corner that hosts the tray.
-        self._hover_timer = QTimer()
-        self._hover_timer.setInterval(180)
-        self._hover_timer.timeout.connect(self._hover_tick)
-
         self.refresh()
         self.tray.show()
-        self._apply_tray_mode(initial=True)
+        self.hud.show()
 
     def _build_menu(self) -> QMenu:
         menu = QMenu()
 
-        self.hover_mode_act = QAction("Hover-only mode", self.tray, checkable=True)
-        self.hover_mode_act.setChecked(self.cfg["tray_mode"] == "hover")
-        self.hover_mode_act.triggered.connect(
-            lambda c: self._set_tray_mode("hover" if c else "always"))
-        menu.addAction(self.hover_mode_act)
+        self.toggle_act = QAction(
+            "Hide HUD" if self.hud.isVisible() else "Show HUD", self.tray)
+        self.toggle_act.triggered.connect(self._toggle_visible)
+        menu.addAction(self.toggle_act)
         refresh_act = QAction("Refresh", self.tray)
         refresh_act.triggered.connect(self.refresh)
         menu.addAction(refresh_act)
@@ -141,41 +134,15 @@ class HudApp:
 
     def _on_tray_clicked(self, reason) -> None:
         if reason in (QSystemTrayIcon.Trigger, QSystemTrayIcon.MiddleClick):
-            # The cursor is on the tray icon at click time — record it so the
-            # hover zone can be centred on the real icon location.
-            cursor = QCursor.pos()
-            self.cfg["tray_icon_x"] = cursor.x()
-            self.cfg["tray_icon_y"] = cursor.y()
-            self._set_tray_mode("hover" if self.cfg["tray_mode"] == "always" else "always")
+            self._toggle_visible()
 
-    def _set_tray_mode(self, mode: str) -> None:
-        if mode not in ("always", "hover"):
-            return
-        self.cfg["tray_mode"] = mode
-        self.hover_mode_act.setChecked(mode == "hover")
-        config.save(self.cfg)
-        self._apply_tray_mode()
-
-    def _apply_tray_mode(self, initial: bool = False) -> None:
-        if self.cfg["tray_mode"] == "hover":
+    def _toggle_visible(self) -> None:
+        if self.hud.isVisible():
             self.hud.hide()
-            self._hover_timer.start()
+            self.toggle_act.setText("Show HUD")
         else:
-            self._hover_timer.stop()
             self.hud.show()
-
-    def _hover_tick(self) -> None:
-        cursor = QCursor.pos()
-        zone = _tray_zone(self.cfg.get("tray_icon_x"), self.cfg.get("tray_icon_y"))
-        in_tray_zone = zone.contains(cursor)
-        hud_geo = self.hud.frameGeometry() if self.hud.isVisible() else QRect()
-        in_hud = self.hud.isVisible() and hud_geo.adjusted(-8, -8, 8, 8).contains(cursor)
-        if in_tray_zone or in_hud:
-            if not self.hud.isVisible():
-                self.hud.show()
-        else:
-            if self.hud.isVisible():
-                self.hud.hide()
+            self.toggle_act.setText("Hide HUD")
 
     def _snap(self, corner: str) -> None:
         self.hud.place_corner(corner)
@@ -223,50 +190,6 @@ class HudApp:
 
     def run(self) -> int:
         return self.app.exec()
-
-
-def _tray_zone(icon_x: int | None = None, icon_y: int | None = None) -> QRect:
-    """Region of the screen treated as 'hovering the tray icon'. If we have
-    a recorded cursor position from a previous tray click, centre a generous
-    zone on that point (since KDE/SNI doesn't expose per-icon geometry). If
-    not, fall back to a panel-band slice computed from screen geometry."""
-    screen = QGuiApplication.primaryScreen()
-    if not screen:
-        return QRect()
-    full = screen.geometry()
-    avail = screen.availableGeometry()
-
-    panel_h_bottom = full.bottom() - avail.bottom()
-    panel_h_top = avail.top() - full.top()
-    panel_w_right = full.right() - avail.right()
-    panel_w_left = avail.left() - full.left()
-    panel_thickness = max(panel_h_bottom, panel_h_top, panel_w_right, panel_w_left, 30)
-
-    if icon_x is not None and icon_y is not None:
-        # Centred zone — wide enough to swallow ~3 adjacent tray icons.
-        half = 80
-        if panel_h_bottom > 0:
-            return QRect(icon_x - half, avail.bottom() + 1, half * 2, panel_thickness)
-        if panel_h_top > 0:
-            return QRect(icon_x - half, full.top(), half * 2, panel_thickness)
-        if panel_w_right > 0:
-            return QRect(avail.right() + 1, icon_y - half, panel_thickness, half * 2)
-        if panel_w_left > 0:
-            return QRect(full.left(), icon_y - half, panel_thickness, half * 2)
-        # No detectable panel — square zone centred on the click.
-        return QRect(icon_x - half, icon_y - half, half * 2, half * 2)
-
-    # No recorded click yet — assume tray cluster lives at the panel's far end.
-    fallback = 480
-    if panel_h_bottom > 0:
-        return QRect(full.right() - fallback, avail.bottom() + 1, fallback, panel_h_bottom)
-    if panel_h_top > 0:
-        return QRect(full.right() - fallback, full.top(), fallback, panel_h_top)
-    if panel_w_right > 0:
-        return QRect(avail.right() + 1, full.bottom() - fallback, panel_w_right, fallback)
-    if panel_w_left > 0:
-        return QRect(full.left(), full.bottom() - fallback, panel_w_left, fallback)
-    return QRect()
 
 
 def _opacity_slider(parent: QMenu, current: float, on_change) -> QWidgetAction:
