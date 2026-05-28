@@ -1,0 +1,14 @@
+[Unit]
+Description=Claude usage tray indicator
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=%h/Projects/claude-tray/.venv/bin/python %h/Projects/claude-tray/main.py
+Restart=on-failure
+RestartSec=5
+Environment=QT_QPA_PLATFORM=xcb
+
+[Install]
+WantedBy=graphical-session.target

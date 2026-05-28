@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Claude Tray
+Comment=Track Claude Code session usage and limits
+Exec=%h/Projects/claude-tray/.venv/bin/python %h/Projects/claude-tray/main.py
+Icon=%h/Projects/claude-tray/icon.svg
+Categories=Utility;Monitor;
+StartupNotify=false
+X-GNOME-Autostart-enabled=true
+NoDisplay=false
