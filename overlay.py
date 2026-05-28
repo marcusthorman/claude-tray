@@ -80,30 +80,46 @@ class Overlay(QWidget):
         top.addWidget(self.remain_lbl, 0, Qt.AlignVCenter)
         outer.addLayout(top)
 
-        # messages bar
-        self.msg_bar = QProgressBar()
-        self.msg_bar.setRange(0, 100)
-        self.msg_bar.setTextVisible(False)
-        self.msg_bar.setObjectName("HudBar")
-        outer.addWidget(self.msg_bar)
+        # session (5h) bar row: label · bar · value
+        self.session_row, self.session_lead, self.msg_bar, self.session_trail = \
+            self._make_bar_row("5H")
+        outer.addLayout(self.session_row)
 
-        # bottom row: msg count · tokens · cost
+        # weekly bar row
+        self.week_row, self.week_lead, self.week_bar, self.week_trail = \
+            self._make_bar_row("WK")
+        outer.addLayout(self.week_row)
+
+        # bottom row: tokens · cost
         bot = QHBoxLayout()
         bot.setSpacing(0)
-        self.msg_lbl = QLabel("0 msgs")
-        self.msg_lbl.setObjectName("HudMeta")
-        bot.addWidget(self.msg_lbl)
-        bot.addStretch()
         self.tok_lbl = QLabel("0 tok")
         self.tok_lbl.setObjectName("HudMeta")
         bot.addWidget(self.tok_lbl)
-        sep = QLabel(" · ")
-        sep.setObjectName("HudMeta")
-        bot.addWidget(sep)
+        bot.addStretch()
         self.cost_lbl = QLabel("$0.00")
         self.cost_lbl.setObjectName("HudMeta")
         bot.addWidget(self.cost_lbl)
         outer.addLayout(bot)
+
+    def _make_bar_row(self, lead_text: str):
+        row = QHBoxLayout()
+        row.setSpacing(8)
+        lead = QLabel(lead_text)
+        lead.setObjectName("HudRowLead")
+        lead.setFixedWidth(22)
+        bar = QProgressBar()
+        bar.setRange(0, 100)
+        bar.setTextVisible(False)
+        bar.setObjectName("HudBar")
+        trail = QLabel("—")
+        trail.setObjectName("HudRowTrail")
+        trail.setMinimumWidth(88)
+        trail.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        row.addWidget(lead, 0, Qt.AlignVCenter)
+        row.addWidget(bar, 1)
+        row.addWidget(trail, 0, Qt.AlignVCenter)
+        return row, lead, bar, trail
 
     # ---------- painting ----------
     def paintEvent(self, _e) -> None:
@@ -129,17 +145,34 @@ class Overlay(QWidget):
             self.dot.set_state("idle")
             self.remain_lbl.setText("idle")
 
+        # 5-hour session bar
         msgs = snap.session.messages
         cap = plan["msgs_5h"]
         if cap:
             pct = min(100, msgs * 100 // cap)
             self.msg_bar.setValue(pct)
-            self.msg_lbl.setText(f"{msgs}/{cap} msgs · {pct}%")
-            self._color_bar(pct)
+            self.session_trail.setText(f"{msgs}/{cap} msgs")
+            self._color_bar(self.msg_bar, pct)
         else:
             self.msg_bar.setValue(0)
-            self.msg_lbl.setText(f"{msgs} msgs")
-            self._color_bar(0)
+            self.session_trail.setText(f"{msgs} msgs")
+            self._color_bar(self.msg_bar, 0)
+
+        # weekly bar — pick whichever model is the binding constraint
+        pick = self._pick_weekly(snap, plan)
+        if pick is None:
+            self.week_lead.setVisible(False)
+            self.week_bar.setVisible(False)
+            self.week_trail.setVisible(False)
+        else:
+            family, hours, cap_h = pick
+            self.week_lead.setVisible(True)
+            self.week_bar.setVisible(True)
+            self.week_trail.setVisible(True)
+            pct_w = min(100, int(hours / cap_h * 100)) if cap_h else 0
+            self.week_bar.setValue(pct_w)
+            self.week_trail.setText(f"{hours:.1f}/{cap_h}h {family}")
+            self._color_bar(self.week_bar, pct_w)
 
         tok = snap.session.total_tokens
         self.tok_lbl.setText(f"{fmt_tokens(tok)} tok")
@@ -151,16 +184,29 @@ class Overlay(QWidget):
 
         self.adjustSize()
 
-    def _color_bar(self, pct: int) -> None:
+    def _pick_weekly(self, snap: Snapshot, plan: dict):
+        opus_h = snap.week_minutes_opus / 60.0
+        sonnet_h = snap.week_minutes_sonnet / 60.0
+        opus_cap = plan.get("weekly_opus_h", 0) or 0
+        sonnet_cap = plan.get("weekly_sonnet_h", 0) or 0
+        if opus_cap == 0 and sonnet_cap == 0:
+            return None
+        opus_pct = (opus_h / opus_cap) if opus_cap else -1.0
+        sonnet_pct = (sonnet_h / sonnet_cap) if sonnet_cap else -1.0
+        if opus_pct >= sonnet_pct and opus_cap:
+            return ("opus", opus_h, opus_cap)
+        return ("sonnet", sonnet_h, sonnet_cap)
+
+    def _color_bar(self, bar: QProgressBar, pct: int) -> None:
         name = "HudBar"
         if pct >= 90:
             name = "HudBarDanger"
         elif pct >= 75:
             name = "HudBarWarn"
-        if self.msg_bar.objectName() != name:
-            self.msg_bar.setObjectName(name)
-            self.msg_bar.style().unpolish(self.msg_bar)
-            self.msg_bar.style().polish(self.msg_bar)
+        if bar.objectName() != name:
+            bar.setObjectName(name)
+            bar.style().unpolish(bar)
+            bar.style().polish(bar)
 
     # ---------- positioning ----------
     def place_corner(self, corner: str) -> None:

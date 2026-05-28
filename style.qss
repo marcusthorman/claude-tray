@@ -38,6 +38,19 @@ QWidget {
     font-weight: 500;
 }
 
+#HudRowLead {
+    color: #7f849c;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 1px;
+}
+
+#HudRowTrail {
+    color: #a6adc8;
+    font-size: 10px;
+    font-weight: 500;
+}
+
 QProgressBar#HudBar,
 QProgressBar#HudBarWarn,
 QProgressBar#HudBarDanger {

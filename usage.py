@@ -74,6 +74,11 @@ class Snapshot:
     today: Totals
     week: Totals
     last_message: datetime | None
+    # active-hours estimate over the last 7d, split by model family
+    week_minutes_opus: float = 0.0
+    week_minutes_sonnet: float = 0.0
+    week_minutes_haiku: float = 0.0
+    week_reset_at: datetime | None = None  # rolling 7d reset point
 
 
 def _decode_project_dir(name: str) -> str:
@@ -165,6 +170,37 @@ def load_entries() -> list[Entry]:
     return out
 
 
+ACTIVE_GAP = timedelta(minutes=5)  # adjacent entries within this gap count as active
+
+
+def _model_family(model: str) -> str:
+    m = (model or "").lower()
+    if "opus" in m:
+        return "opus"
+    if "haiku" in m:
+        return "haiku"
+    return "sonnet"
+
+
+def _active_minutes_by_family(entries: list[Entry], since: datetime) -> dict[str, float]:
+    """Walk entries in time order; sum the gap to the prior entry for every
+    pair within ACTIVE_GAP. Attribute each interval to the model family of the
+    most recent assistant entry on or before it (so user-prompt intervals
+    inherit the model that answered them)."""
+    mins = {"opus": 0.0, "sonnet": 0.0, "haiku": 0.0}
+    prev: Entry | None = None
+    last_asst_family = "sonnet"
+    for e in entries:
+        if e.kind == "assistant":
+            last_asst_family = _model_family(e.model)
+        if prev is not None and e.ts >= since:
+            gap = e.ts - prev.ts
+            if gap <= ACTIVE_GAP:
+                mins[last_asst_family] += gap.total_seconds() / 60.0
+        prev = e
+    return mins
+
+
 def compute(now: datetime | None = None) -> Snapshot:
     if now is None:
         now = datetime.now(timezone.utc)
@@ -200,6 +236,12 @@ def compute(now: datetime | None = None) -> Snapshot:
         if e.ts >= week_start:
             week.add(e)
 
+    active = _active_minutes_by_family(entries, week_start)
+    # Rolling 7-day window: it "resets" continuously. We surface the moment
+    # the oldest minute drops off — i.e. earliest-in-window timestamp + 7d.
+    earliest_in_week = next((e.ts for e in entries if e.ts >= week_start), None)
+    week_reset_at = (earliest_in_week + timedelta(days=7)) if earliest_in_week else None
+
     return Snapshot(
         now=now,
         session_active=session_active,
@@ -209,6 +251,10 @@ def compute(now: datetime | None = None) -> Snapshot:
         today=today,
         week=week,
         last_message=last_message,
+        week_minutes_opus=active["opus"],
+        week_minutes_sonnet=active["sonnet"],
+        week_minutes_haiku=active["haiku"],
+        week_reset_at=week_reset_at,
     )
 
 
