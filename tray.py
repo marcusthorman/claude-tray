@@ -6,9 +6,18 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QPoint, QTimer
-from PySide6.QtGui import QAction, QIcon
-from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
+from PySide6.QtCore import QPoint, Qt, QTimer
+from PySide6.QtGui import QAction, QActionGroup, QIcon
+from PySide6.QtWidgets import (
+    QApplication,
+    QHBoxLayout,
+    QLabel,
+    QMenu,
+    QSlider,
+    QSystemTrayIcon,
+    QWidget,
+    QWidgetAction,
+)
 
 import config
 import usage
@@ -29,35 +38,18 @@ class HudApp:
         self.cfg = config.load()
 
         # Overlay
-        self.hud = Overlay(locked=bool(self.cfg["locked"]))
+        self.hud = Overlay(locked=bool(self.cfg["locked"]),
+                           opacity=float(self.cfg["opacity"]))
         self.hud.restore_position(self.cfg["pos_x"], self.cfg["pos_y"], self.cfg["corner"])
         self.hud.move_finished.connect(self._on_moved)
         self.hud.refresh_requested.connect(self.refresh)
         self.hud.quit_requested.connect(self.app.quit)
 
-        # Tray icon (handle for show/hide + quit)
+        # Tray icon (handle for show/hide + settings + quit)
         icon = QIcon(str(ROOT / "icon.svg"))
         self.tray = QSystemTrayIcon(icon)
         self.tray.setToolTip("Claude usage HUD")
-
-        menu = QMenu()
-        self.toggle_act = QAction("Hide HUD", self.tray)
-        self.toggle_act.triggered.connect(self._toggle_visible)
-        menu.addAction(self.toggle_act)
-        refresh_act = QAction("Refresh", self.tray)
-        refresh_act.triggered.connect(self.refresh)
-        menu.addAction(refresh_act)
-        menu.addSeparator()
-        for label, corner in (("Snap top-right", "tr"), ("Snap top-left", "tl"),
-                              ("Snap bottom-right", "br"), ("Snap bottom-left", "bl")):
-            a = QAction(label, self.tray)
-            a.triggered.connect(lambda _=False, c=corner: self._snap(c))
-            menu.addAction(a)
-        menu.addSeparator()
-        quit_act = QAction("Quit", self.tray)
-        quit_act.triggered.connect(self.app.quit)
-        menu.addAction(quit_act)
-        self.tray.setContextMenu(menu)
+        self.tray.setContextMenu(self._build_menu())
         self.tray.activated.connect(self._on_tray_clicked)
 
         self.snapshot = None
@@ -68,6 +60,77 @@ class HudApp:
         self.refresh()
         self.tray.show()
         self.hud.show()
+
+    def _build_menu(self) -> QMenu:
+        menu = QMenu()
+
+        self.toggle_act = QAction(
+            "Hide HUD" if self.hud.isVisible() else "Show HUD", self.tray)
+        self.toggle_act.triggered.connect(self._toggle_visible)
+        menu.addAction(self.toggle_act)
+        refresh_act = QAction("Refresh", self.tray)
+        refresh_act.triggered.connect(self.refresh)
+        menu.addAction(refresh_act)
+        menu.addSeparator()
+
+        # Display mode (percent / raw / both)
+        disp = menu.addMenu("Display")
+        self._mode_group = QActionGroup(self.tray)
+        self._mode_group.setExclusive(True)
+        for label, key in (("Percentage", "percent"), ("Raw values", "raw"),
+                           ("Both", "both")):
+            a = QAction(label, self.tray, checkable=True)
+            a.setChecked(self.cfg["display_mode"] == key)
+            a.triggered.connect(lambda _=False, k=key: self._set_display_mode(k))
+            self._mode_group.addAction(a)
+            disp.addAction(a)
+
+        # Toggles: tokens, cost
+        self._tok_act = QAction("Show tokens", self.tray, checkable=True)
+        self._tok_act.setChecked(bool(self.cfg["show_tokens"]))
+        self._tok_act.triggered.connect(
+            lambda c: self._set_flag("show_tokens", c))
+        menu.addAction(self._tok_act)
+        self._cost_act = QAction("Show price", self.tray, checkable=True)
+        self._cost_act.setChecked(bool(self.cfg["show_cost"]))
+        self._cost_act.triggered.connect(
+            lambda c: self._set_flag("show_cost", c))
+        menu.addAction(self._cost_act)
+        menu.addSeparator()
+
+        # Opacity slider (QWidgetAction)
+        menu.addAction(_opacity_slider(menu, self.cfg["opacity"], self._set_opacity))
+        menu.addSeparator()
+
+        # Position
+        for label, corner in (("Snap top-right", "tr"), ("Snap top-left", "tl"),
+                              ("Snap bottom-right", "br"), ("Snap bottom-left", "bl")):
+            a = QAction(label, self.tray)
+            a.triggered.connect(lambda _=False, c=corner: self._snap(c))
+            menu.addAction(a)
+        menu.addSeparator()
+
+        quit_act = QAction("Quit", self.tray)
+        quit_act.triggered.connect(self.app.quit)
+        menu.addAction(quit_act)
+        return menu
+
+    def _set_display_mode(self, mode: str) -> None:
+        self.cfg["display_mode"] = mode
+        config.save(self.cfg)
+        self.refresh()
+
+    def _set_flag(self, key: str, value: bool) -> None:
+        self.cfg[key] = bool(value)
+        config.save(self.cfg)
+        self.refresh()
+
+    def _set_opacity(self, value_0_100: int, *, save: bool = False) -> None:
+        opacity = max(0.30, min(1.0, value_0_100 / 100.0))
+        self.cfg["opacity"] = opacity
+        self.hud.set_opacity(opacity)
+        if save:
+            config.save(self.cfg)
 
     def _on_tray_clicked(self, reason) -> None:
         if reason in (QSystemTrayIcon.Trigger, QSystemTrayIcon.MiddleClick):
@@ -101,7 +164,13 @@ class HudApp:
 
     def refresh(self) -> None:
         self.snapshot = usage.compute()
-        self.hud.update_view(self.snapshot, self.cfg["plan"], self.cfg["show_cost"])
+        self.hud.update_view(
+            self.snapshot,
+            self.cfg["plan"],
+            show_tokens=bool(self.cfg["show_tokens"]),
+            show_cost=bool(self.cfg["show_cost"]),
+            display_mode=str(self.cfg["display_mode"]),
+        )
         self._update_tooltip()
 
     def _update_tooltip(self) -> None:
@@ -121,6 +190,44 @@ class HudApp:
 
     def run(self) -> int:
         return self.app.exec()
+
+
+def _opacity_slider(parent: QMenu, current: float, on_change) -> QWidgetAction:
+    """Slider embedded in a menu item via QWidgetAction. Updates the HUD live;
+    persists to config only on slider release."""
+    container = QWidget(parent)
+    lay = QHBoxLayout(container)
+    lay.setContentsMargins(12, 4, 12, 4)
+    lay.setSpacing(8)
+    label = QLabel("Opacity")
+    label.setObjectName("MenuLabel")
+    label.setFixedWidth(60)
+    slider = QSlider(Qt.Horizontal)
+    slider.setMinimum(30)
+    slider.setMaximum(100)
+    slider.setValue(int(round(float(current) * 100)))
+    slider.setFixedWidth(140)
+    pct = QLabel(f"{slider.value()}%")
+    pct.setFixedWidth(36)
+    pct.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+
+    def _on_val(v):
+        pct.setText(f"{v}%")
+        on_change(v, save=False)
+
+    def _on_release():
+        on_change(slider.value(), save=True)
+
+    slider.valueChanged.connect(_on_val)
+    slider.sliderReleased.connect(_on_release)
+
+    lay.addWidget(label)
+    lay.addWidget(slider, 1)
+    lay.addWidget(pct)
+
+    wa = QWidgetAction(parent)
+    wa.setDefaultWidget(container)
+    return wa
 
 
 def main() -> int:

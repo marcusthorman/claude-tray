@@ -88,3 +88,25 @@ QMenu::separator {
     background: #313244;
     margin: 4px 6px;
 }
+
+#MenuLabel {
+    color: #cdd6f4;
+    font-size: 11px;
+}
+
+QSlider::groove:horizontal {
+    background: #313244;
+    height: 4px;
+    border-radius: 2px;
+}
+QSlider::handle:horizontal {
+    background: #94e2d5;
+    width: 12px;
+    height: 12px;
+    margin: -5px 0;
+    border-radius: 6px;
+}
+QSlider::sub-page:horizontal {
+    background: #94e2d5;
+    border-radius: 2px;
+}

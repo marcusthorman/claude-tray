@@ -40,10 +40,11 @@ class Overlay(QWidget):
     refresh_requested = Signal()
     quit_requested = Signal()
 
-    def __init__(self, locked: bool = False) -> None:
+    def __init__(self, locked: bool = False, opacity: float = 0.84) -> None:
         super().__init__(None)
         self._locked = locked
         self._drag_origin: QPoint | None = None
+        self._opacity = float(opacity)
         self._build()
 
     # ---------- window setup ----------
@@ -128,12 +129,19 @@ class Overlay(QWidget):
         rect = self.rect().adjusted(0, 0, -1, -1)
         path = QPainterPath()
         path.addRoundedRect(rect, 14, 14)
-        p.fillPath(path, QColor(30, 30, 46, 215))     # base, ~84% opacity
-        p.setPen(QColor(69, 71, 90, 200))             # subtle border
+        bg_alpha = max(0, min(255, int(round(self._opacity * 255))))
+        border_alpha = int(bg_alpha * 200 / 215)
+        p.fillPath(path, QColor(30, 30, 46, bg_alpha))
+        p.setPen(QColor(69, 71, 90, border_alpha))
         p.drawPath(path)
 
+    def set_opacity(self, opacity: float) -> None:
+        self._opacity = max(0.3, min(1.0, float(opacity)))
+        self.update()
+
     # ---------- update ----------
-    def update_view(self, snap: Snapshot, plan_key: str, show_cost: bool) -> None:
+    def update_view(self, snap: Snapshot, plan_key: str, *,
+                    show_tokens: bool, show_cost: bool, display_mode: str) -> None:
         plan = PLAN_LIMITS.get(plan_key, PLAN_LIMITS["max5"])
         self.plan_lbl.setText(plan["label"])
 
@@ -151,7 +159,7 @@ class Overlay(QWidget):
         if cap:
             pct = min(100, msgs * 100 // cap)
             self.msg_bar.setValue(pct)
-            self.session_trail.setText(f"{pct}%")
+            self.session_trail.setText(_fmt_trail(display_mode, pct, f"{msgs}/{cap}"))
             self._color_bar(self.msg_bar, pct)
         else:
             self.msg_bar.setValue(0)
@@ -171,16 +179,13 @@ class Overlay(QWidget):
             self.week_trail.setVisible(True)
             pct_w = min(100, int(hours / cap_h * 100)) if cap_h else 0
             self.week_bar.setValue(pct_w)
-            self.week_trail.setText(f"{pct_w}%")
+            self.week_trail.setText(_fmt_trail(display_mode, pct_w, f"{hours:.1f}/{cap_h}h"))
             self._color_bar(self.week_bar, pct_w)
 
-        tok = snap.session.total_tokens
-        self.tok_lbl.setText(f"{fmt_tokens(tok)} tok")
-        if show_cost:
-            self.cost_lbl.setText(f"${snap.session.cost:.2f}")
-            self.cost_lbl.setVisible(True)
-        else:
-            self.cost_lbl.setVisible(False)
+        self.tok_lbl.setText(f"{fmt_tokens(snap.session.total_tokens)} tok")
+        self.cost_lbl.setText(f"${snap.session.cost:.2f}")
+        self.tok_lbl.setVisible(show_tokens)
+        self.cost_lbl.setVisible(show_cost)
 
         self.adjustSize()
 
@@ -315,3 +320,11 @@ def _act(label: str, slot, parent) -> QAction:
     a = QAction(label, parent)
     a.triggered.connect(slot)
     return a
+
+
+def _fmt_trail(mode: str, pct: int, raw: str) -> str:
+    if mode == "raw":
+        return raw
+    if mode == "both":
+        return f"{pct}%  ·  {raw}"
+    return f"{pct}%"

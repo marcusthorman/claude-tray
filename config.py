@@ -10,7 +10,10 @@ CONFIG_PATH = Path.home() / ".config" / "claude-tray" / "config.toml"
 DEFAULT: dict = {
     "plan": "max5",          # pro | max5 | max20 | api
     "refresh_seconds": 30,
+    "show_tokens": True,
     "show_cost": True,
+    "display_mode": "percent",  # percent | raw | both
+    "opacity": 0.84,         # 0.30 .. 1.00
     "corner": "tr",          # tr | tl | br | bl  — used when no saved position
     "pos_x": None,
     "pos_y": None,
@@ -39,7 +42,10 @@ def save(cfg: dict) -> None:
         '# plan: "pro" | "max5" | "max20" | "api"',
         f'plan = "{cfg["plan"]}"',
         f"refresh_seconds = {int(cfg['refresh_seconds'])}",
+        f"show_tokens = {'true' if cfg['show_tokens'] else 'false'}",
         f"show_cost = {'true' if cfg['show_cost'] else 'false'}",
+        f'display_mode = "{cfg["display_mode"]}"',
+        f"opacity = {float(cfg['opacity']):.2f}",
         f'corner = "{cfg["corner"]}"',
         f"locked = {'true' if cfg['locked'] else 'false'}",
     ]
