@@ -31,7 +31,7 @@ from PySide6.QtWidgets import (
 from pricing import PLAN_LIMITS
 from usage import Snapshot, fmt_duration, fmt_tokens
 
-HUD_WIDTH = 340
+HUD_WIDTH = 320
 MARGIN = 14
 
 
