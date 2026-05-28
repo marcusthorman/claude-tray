@@ -141,6 +141,11 @@ class HudApp:
 
     def _on_tray_clicked(self, reason) -> None:
         if reason in (QSystemTrayIcon.Trigger, QSystemTrayIcon.MiddleClick):
+            # The cursor is on the tray icon at click time — record it so the
+            # hover zone can be centred on the real icon location.
+            cursor = QCursor.pos()
+            self.cfg["tray_icon_x"] = cursor.x()
+            self.cfg["tray_icon_y"] = cursor.y()
             self._set_tray_mode("hover" if self.cfg["tray_mode"] == "always" else "always")
 
     def _set_tray_mode(self, mode: str) -> None:
@@ -161,7 +166,8 @@ class HudApp:
 
     def _hover_tick(self) -> None:
         cursor = QCursor.pos()
-        in_tray_zone = _tray_zone().contains(cursor)
+        zone = _tray_zone(self.cfg.get("tray_icon_x"), self.cfg.get("tray_icon_y"))
+        in_tray_zone = zone.contains(cursor)
         hud_geo = self.hud.frameGeometry() if self.hud.isVisible() else QRect()
         in_hud = self.hud.isVisible() and hud_geo.adjusted(-8, -8, 8, 8).contains(cursor)
         if in_tray_zone or in_hud:
@@ -219,30 +225,47 @@ class HudApp:
         return self.app.exec()
 
 
-def _tray_zone() -> QRect:
-    """Best-effort estimate of the screen region occupied by the system-tray
-    portion of the Plasma panel. We can't query the tray-icon's actual
-    geometry on KDE (Qt returns an invalid rect for SNI items), so we
-    locate the panel band from screen-vs-workarea diff and take the
-    corner-side slice that normally hosts the tray."""
+def _tray_zone(icon_x: int | None = None, icon_y: int | None = None) -> QRect:
+    """Region of the screen treated as 'hovering the tray icon'. If we have
+    a recorded cursor position from a previous tray click, centre a generous
+    zone on that point (since KDE/SNI doesn't expose per-icon geometry). If
+    not, fall back to a panel-band slice computed from screen geometry."""
     screen = QGuiApplication.primaryScreen()
     if not screen:
         return QRect()
     full = screen.geometry()
     avail = screen.availableGeometry()
+
     panel_h_bottom = full.bottom() - avail.bottom()
     panel_h_top = avail.top() - full.top()
     panel_w_right = full.right() - avail.right()
     panel_w_left = avail.left() - full.left()
-    zone = 360  # slice length along the panel's long axis
-    if panel_h_bottom > 0:                          # bottom panel
-        return QRect(full.right() - zone, avail.bottom() + 1, zone, panel_h_bottom)
-    if panel_h_top > 0:                             # top panel
-        return QRect(full.right() - zone, full.top(), zone, panel_h_top)
-    if panel_w_right > 0:                           # right panel
-        return QRect(avail.right() + 1, full.bottom() - zone, panel_w_right, zone)
-    if panel_w_left > 0:                            # left panel
-        return QRect(full.left(), full.bottom() - zone, panel_w_left, zone)
+    panel_thickness = max(panel_h_bottom, panel_h_top, panel_w_right, panel_w_left, 30)
+
+    if icon_x is not None and icon_y is not None:
+        # Centred zone — wide enough to swallow ~3 adjacent tray icons.
+        half = 80
+        if panel_h_bottom > 0:
+            return QRect(icon_x - half, avail.bottom() + 1, half * 2, panel_thickness)
+        if panel_h_top > 0:
+            return QRect(icon_x - half, full.top(), half * 2, panel_thickness)
+        if panel_w_right > 0:
+            return QRect(avail.right() + 1, icon_y - half, panel_thickness, half * 2)
+        if panel_w_left > 0:
+            return QRect(full.left(), icon_y - half, panel_thickness, half * 2)
+        # No detectable panel — square zone centred on the click.
+        return QRect(icon_x - half, icon_y - half, half * 2, half * 2)
+
+    # No recorded click yet — assume tray cluster lives at the panel's far end.
+    fallback = 480
+    if panel_h_bottom > 0:
+        return QRect(full.right() - fallback, avail.bottom() + 1, fallback, panel_h_bottom)
+    if panel_h_top > 0:
+        return QRect(full.right() - fallback, full.top(), fallback, panel_h_top)
+    if panel_w_right > 0:
+        return QRect(avail.right() + 1, full.bottom() - fallback, panel_w_right, fallback)
+    if panel_w_left > 0:
+        return QRect(full.left(), full.bottom() - fallback, panel_w_left, fallback)
     return QRect()
 
 

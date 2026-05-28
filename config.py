@@ -19,6 +19,8 @@ DEFAULT: dict = {
     "pos_y": None,
     "locked": False,
     "tray_mode": "always",   # always | hover  — left-click tray to toggle
+    "tray_icon_x": None,     # recorded cursor pos at tray click — center of hover zone
+    "tray_icon_y": None,
 }
 
 
@@ -51,6 +53,9 @@ def save(cfg: dict) -> None:
         f"locked = {'true' if cfg['locked'] else 'false'}",
         f'tray_mode = "{cfg["tray_mode"]}"',
     ]
+    if cfg.get("tray_icon_x") is not None and cfg.get("tray_icon_y") is not None:
+        lines.append(f"tray_icon_x = {int(cfg['tray_icon_x'])}")
+        lines.append(f"tray_icon_y = {int(cfg['tray_icon_y'])}")
     if cfg.get("pos_x") is not None and cfg.get("pos_y") is not None:
         lines.append(f"pos_x = {int(cfg['pos_x'])}")
         lines.append(f"pos_y = {int(cfg['pos_y'])}")
