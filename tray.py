@@ -6,18 +6,9 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QPoint, Qt, QTimer
+from PySide6.QtCore import QPoint, QTimer
 from PySide6.QtGui import QAction, QActionGroup, QIcon
-from PySide6.QtWidgets import (
-    QApplication,
-    QHBoxLayout,
-    QLabel,
-    QMenu,
-    QSlider,
-    QSystemTrayIcon,
-    QWidget,
-    QWidgetAction,
-)
+from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
 import config
 import usage
@@ -98,8 +89,18 @@ class HudApp:
         menu.addAction(self._cost_act)
         menu.addSeparator()
 
-        # Opacity slider (QWidgetAction)
-        menu.addAction(_opacity_slider(menu, self.cfg["opacity"], self._set_opacity))
+        # Opacity (DBusMenu can't transport an embedded slider, so it lives as
+        # a submenu of discrete radio options).
+        op_menu = menu.addMenu("Opacity")
+        self._op_group = QActionGroup(self.tray)
+        self._op_group.setExclusive(True)
+        current_pct = int(round(float(self.cfg["opacity"]) * 100))
+        for pct in (30, 40, 50, 60, 70, 80, 90, 100):
+            a = QAction(f"{pct}%", self.tray, checkable=True)
+            a.setChecked(pct == current_pct)
+            a.triggered.connect(lambda _=False, p=pct: self._set_opacity(p))
+            self._op_group.addAction(a)
+            op_menu.addAction(a)
         menu.addSeparator()
 
         # Position
@@ -125,12 +126,11 @@ class HudApp:
         config.save(self.cfg)
         self.refresh()
 
-    def _set_opacity(self, value_0_100: int, *, save: bool = False) -> None:
+    def _set_opacity(self, value_0_100: int) -> None:
         opacity = max(0.30, min(1.0, value_0_100 / 100.0))
         self.cfg["opacity"] = opacity
         self.hud.set_opacity(opacity)
-        if save:
-            config.save(self.cfg)
+        config.save(self.cfg)
 
     def _on_tray_clicked(self, reason) -> None:
         if reason in (QSystemTrayIcon.Trigger, QSystemTrayIcon.MiddleClick):
@@ -190,44 +190,6 @@ class HudApp:
 
     def run(self) -> int:
         return self.app.exec()
-
-
-def _opacity_slider(parent: QMenu, current: float, on_change) -> QWidgetAction:
-    """Slider embedded in a menu item via QWidgetAction. Updates the HUD live;
-    persists to config only on slider release."""
-    container = QWidget(parent)
-    lay = QHBoxLayout(container)
-    lay.setContentsMargins(12, 4, 12, 4)
-    lay.setSpacing(8)
-    label = QLabel("Opacity")
-    label.setObjectName("MenuLabel")
-    label.setFixedWidth(60)
-    slider = QSlider(Qt.Horizontal)
-    slider.setMinimum(30)
-    slider.setMaximum(100)
-    slider.setValue(int(round(float(current) * 100)))
-    slider.setFixedWidth(140)
-    pct = QLabel(f"{slider.value()}%")
-    pct.setFixedWidth(36)
-    pct.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-
-    def _on_val(v):
-        pct.setText(f"{v}%")
-        on_change(v, save=False)
-
-    def _on_release():
-        on_change(slider.value(), save=True)
-
-    slider.valueChanged.connect(_on_val)
-    slider.sliderReleased.connect(_on_release)
-
-    lay.addWidget(label)
-    lay.addWidget(slider, 1)
-    lay.addWidget(pct)
-
-    wa = QWidgetAction(parent)
-    wa.setDefaultWidget(container)
-    return wa
 
 
 def main() -> int:
