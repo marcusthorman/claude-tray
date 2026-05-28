@@ -151,7 +151,7 @@ class Overlay(QWidget):
         if cap:
             pct = min(100, msgs * 100 // cap)
             self.msg_bar.setValue(pct)
-            self.session_trail.setText(f"{pct}%  ·  {msgs}/{cap}")
+            self.session_trail.setText(f"{pct}%")
             self._color_bar(self.msg_bar, pct)
         else:
             self.msg_bar.setValue(0)
@@ -171,7 +171,7 @@ class Overlay(QWidget):
             self.week_trail.setVisible(True)
             pct_w = min(100, int(hours / cap_h * 100)) if cap_h else 0
             self.week_bar.setValue(pct_w)
-            self.week_trail.setText(f"{pct_w}%  ·  {hours:.1f}/{cap_h}h")
+            self.week_trail.setText(f"{pct_w}%")
             self._color_bar(self.week_bar, pct_w)
 
         tok = snap.session.total_tokens
