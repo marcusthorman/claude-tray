@@ -91,16 +91,9 @@ class Overlay(QWidget):
             self._make_bar_row("WK")
         outer.addLayout(self.week_row)
 
-        # burn rate row
-        self.burn_row = QHBoxLayout()
-        self.burn_row.setSpacing(0)
-        self.burn_lbl = QLabel("burn —")
-        self.burn_lbl.setObjectName("HudMeta")
-        self.burn_row.addWidget(self.burn_lbl)
-        self.burn_row.addStretch()
-        self.burn_proj_lbl = QLabel("")
-        self.burn_proj_lbl.setObjectName("HudMeta")
-        self.burn_row.addWidget(self.burn_proj_lbl)
+        # burn-rate bar row
+        self.burn_row, self.burn_lead, self.burn_bar, self.burn_trail = \
+            self._make_bar_row("BR")
         outer.addLayout(self.burn_row)
 
         # bottom row: tokens · cost
@@ -173,11 +166,11 @@ class Overlay(QWidget):
             pct = min(100, msgs * 100 // cap)
             self.msg_bar.setValue(pct)
             self.session_trail.setText(_fmt_trail(display_mode, pct, f"{msgs}/{cap}"))
-            self._color_bar(self.msg_bar, pct)
+            self._color_bar(self.msg_bar, warn=pct >= 75, danger=pct >= 90)
         else:
             self.msg_bar.setValue(0)
             self.session_trail.setText(f"{msgs} msgs")
-            self._color_bar(self.msg_bar, 0)
+            self._color_bar(self.msg_bar, warn=False, danger=False)
 
         # weekly bar — pick whichever model is the binding constraint
         pick = self._pick_weekly(snap, plan)
@@ -193,7 +186,7 @@ class Overlay(QWidget):
             pct_w = min(100, int(hours / cap_h * 100)) if cap_h else 0
             self.week_bar.setValue(pct_w)
             self.week_trail.setText(_fmt_trail(display_mode, pct_w, f"{hours:.1f}/{cap_h}h"))
-            self._color_bar(self.week_bar, pct_w)
+            self._color_bar(self.week_bar, warn=pct_w >= 75, danger=pct_w >= 90)
 
         self.tok_lbl.setText(f"{fmt_tokens(snap.session.total_tokens)} tok")
         self.cost_lbl.setText(f"${snap.session.cost:.2f}")
@@ -201,29 +194,26 @@ class Overlay(QWidget):
         self.cost_lbl.setVisible(show_cost)
 
         # Burn rate as a pace multiplier: 1.0 = on pace to hit exactly the cap
-        # at reset; 0.5 = half pace; 1.5 = will blow through the cap at 3h 20m
-        # into the 5h window. Needs both a cap and a non-trivial elapsed time
-        # to be meaningful.
+        # at reset; 0.5 = half pace; 1.5 = will blow through the cap. Mapped
+        # onto the bar with 1.0× at 50% fill, so the right half of the bar is
+        # the over-pace zone. Bar caps at 100% (i.e. burn >= 2.0).
         show_burn = (show_burnrate and snap.session_active
                      and cap and snap.session_start and snap.session_reset)
         if show_burn:
             elapsed_h = (snap.now - snap.session_start).total_seconds() / 3600.0
-            show_burn = elapsed_h >= (60 / 3600)  # at least one minute
-        self.burn_lbl.setVisible(show_burn)
-        self.burn_proj_lbl.setVisible(show_burn)
+            show_burn = elapsed_h >= (60 / 3600)
+        self.burn_lead.setVisible(show_burn)
+        self.burn_bar.setVisible(show_burn)
+        self.burn_trail.setVisible(show_burn)
         if show_burn:
             window_h = (snap.session_reset - snap.session_start).total_seconds() / 3600.0
             usage_frac = snap.session.messages / cap
             elapsed_frac = elapsed_h / window_h
             burn = usage_frac / elapsed_frac if elapsed_frac > 0 else 0.0
-            colour = "#a6e3a1"                  # green: under pace
-            if burn >= 1.5:
-                colour = "#f38ba8"              # red: 1.5× +
-            elif burn >= 1.0:
-                colour = "#f9e2af"              # amber: above pace
-            self.burn_lbl.setText(f"burn  {burn:.2f}×")
-            self.burn_lbl.setStyleSheet(f"color: {colour};")
-            self.burn_proj_lbl.setText(f"{snap.session_msg_per_hour:.0f} msg/h")
+            self.burn_bar.setValue(min(100, int(round(burn * 50))))
+            self.burn_trail.setText(_fmt_burn_trail(
+                display_mode, burn, snap.session_msg_per_hour))
+            self._color_bar(self.burn_bar, warn=burn >= 1.0, danger=burn >= 1.5)
 
         self.adjustSize()
 
@@ -240,12 +230,8 @@ class Overlay(QWidget):
             return ("opus", opus_h, opus_cap)
         return ("sonnet", sonnet_h, sonnet_cap)
 
-    def _color_bar(self, bar: QProgressBar, pct: int) -> None:
-        name = "HudBar"
-        if pct >= 90:
-            name = "HudBarDanger"
-        elif pct >= 75:
-            name = "HudBarWarn"
+    def _color_bar(self, bar: QProgressBar, *, warn: bool, danger: bool) -> None:
+        name = "HudBarDanger" if danger else ("HudBarWarn" if warn else "HudBar")
         if bar.objectName() != name:
             bar.setObjectName(name)
             bar.style().unpolish(bar)
@@ -366,3 +352,13 @@ def _fmt_trail(mode: str, pct: int, raw: str) -> str:
     if mode == "both":
         return f"{pct}%  ·  {raw}"
     return f"{pct}%"
+
+
+def _fmt_burn_trail(mode: str, burn: float, msg_per_hour: float) -> str:
+    head = f"{burn:.2f}×"
+    raw = f"{msg_per_hour:.0f} msg/h"
+    if mode == "raw":
+        return raw
+    if mode == "both":
+        return f"{head}  ·  {raw}"
+    return head
