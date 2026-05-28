@@ -57,8 +57,17 @@ systemctl --user restart claude-tray
 ## Controls
 
 - **Left-drag** the HUD to reposition (saved automatically)
-- **Right-click** for a menu: refresh, snap-to-corner, lock, quit
-- **Tray icon** toggles the HUD show/hide
+- **Right-click** the HUD for a menu: refresh, snap-to-corner, lock, quit
+- **Left-click the tray icon** toggles between *Always-on* and *Hover-only*
+  mode. In hover-only, the HUD is hidden by default and appears when the
+  cursor moves over the tray icon (and stays open while you mouse over the
+  HUD itself).
+- **Right-click the tray icon** for the settings menu:
+  - Display: Percentage / Raw values / Both
+  - Show tokens (toggle the `42.62M tok` part of the bottom row)
+  - Show price (toggle the `$123.52` part)
+  - Opacity slider (30%–100%, live preview while dragging)
+  - Snap-to-corner, hover-only mode, quit
 
 ## How the counters work
 

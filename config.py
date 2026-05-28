@@ -18,6 +18,7 @@ DEFAULT: dict = {
     "pos_x": None,
     "pos_y": None,
     "locked": False,
+    "tray_mode": "always",   # always | hover  — left-click tray to toggle
 }
 
 
@@ -48,6 +49,7 @@ def save(cfg: dict) -> None:
         f"opacity = {float(cfg['opacity']):.2f}",
         f'corner = "{cfg["corner"]}"',
         f"locked = {'true' if cfg['locked'] else 'false'}",
+        f'tray_mode = "{cfg["tray_mode"]}"',
     ]
     if cfg.get("pos_x") is not None and cfg.get("pos_y") is not None:
         lines.append(f"pos_x = {int(cfg['pos_x'])}")
