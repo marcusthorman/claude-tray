@@ -12,6 +12,7 @@ DEFAULT: dict = {
     "refresh_seconds": 30,
     "show_tokens": True,
     "show_cost": True,
+    "show_burnrate": True,
     "display_mode": "percent",  # percent | raw | both
     "opacity": 0.84,         # 0.30 .. 1.00
     "corner": "tr",          # tr | tl | br | bl  — used when no saved position
@@ -44,6 +45,7 @@ def save(cfg: dict) -> None:
         f"refresh_seconds = {int(cfg['refresh_seconds'])}",
         f"show_tokens = {'true' if cfg['show_tokens'] else 'false'}",
         f"show_cost = {'true' if cfg['show_cost'] else 'false'}",
+        f"show_burnrate = {'true' if cfg['show_burnrate'] else 'false'}",
         f'display_mode = "{cfg["display_mode"]}"',
         f"opacity = {float(cfg['opacity']):.2f}",
         f'corner = "{cfg["corner"]}"',

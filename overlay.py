@@ -91,6 +91,18 @@ class Overlay(QWidget):
             self._make_bar_row("WK")
         outer.addLayout(self.week_row)
 
+        # burn rate row
+        self.burn_row = QHBoxLayout()
+        self.burn_row.setSpacing(0)
+        self.burn_lbl = QLabel("burn —")
+        self.burn_lbl.setObjectName("HudMeta")
+        self.burn_row.addWidget(self.burn_lbl)
+        self.burn_row.addStretch()
+        self.burn_proj_lbl = QLabel("")
+        self.burn_proj_lbl.setObjectName("HudMeta")
+        self.burn_row.addWidget(self.burn_proj_lbl)
+        outer.addLayout(self.burn_row)
+
         # bottom row: tokens · cost
         bot = QHBoxLayout()
         bot.setSpacing(0)
@@ -141,7 +153,8 @@ class Overlay(QWidget):
 
     # ---------- update ----------
     def update_view(self, snap: Snapshot, plan_key: str, *,
-                    show_tokens: bool, show_cost: bool, display_mode: str) -> None:
+                    show_tokens: bool, show_cost: bool, show_burnrate: bool,
+                    display_mode: str) -> None:
         plan = PLAN_LIMITS.get(plan_key, PLAN_LIMITS["max5"])
         self.plan_lbl.setText(plan["label"])
 
@@ -186,6 +199,27 @@ class Overlay(QWidget):
         self.cost_lbl.setText(f"${snap.session.cost:.2f}")
         self.tok_lbl.setVisible(show_tokens)
         self.cost_lbl.setVisible(show_cost)
+
+        # burn rate
+        show_burn = show_burnrate and snap.session_active and snap.session_msg_per_hour > 0
+        self.burn_lbl.setVisible(show_burn)
+        self.burn_proj_lbl.setVisible(show_burn)
+        if show_burn:
+            rate = snap.session_msg_per_hour
+            self.burn_lbl.setText(f"burn  {rate:.0f} msg/h")
+            if cap and snap.session_reset:
+                remaining_h = (snap.session_reset - snap.now).total_seconds() / 3600.0
+                projected_msgs = snap.session.messages + rate * remaining_h
+                proj_pct = int(projected_msgs / cap * 100)
+                colour = "#a6e3a1"                  # green
+                if proj_pct >= 100:
+                    colour = "#f38ba8"              # red
+                elif proj_pct >= 80:
+                    colour = "#f9e2af"              # amber
+                self.burn_proj_lbl.setText(f"proj  {proj_pct}%")
+                self.burn_proj_lbl.setStyleSheet(f"color: {colour};")
+            else:
+                self.burn_proj_lbl.setText("")
 
         self.adjustSize()
 

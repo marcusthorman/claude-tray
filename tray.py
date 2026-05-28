@@ -87,6 +87,11 @@ class HudApp:
         self._cost_act.triggered.connect(
             lambda c: self._set_flag("show_cost", c))
         menu.addAction(self._cost_act)
+        self._burn_act = QAction("Show burnrate", self.tray, checkable=True)
+        self._burn_act.setChecked(bool(self.cfg["show_burnrate"]))
+        self._burn_act.triggered.connect(
+            lambda c: self._set_flag("show_burnrate", c))
+        menu.addAction(self._burn_act)
         menu.addSeparator()
 
         # Opacity (DBusMenu can't transport an embedded slider, so it lives as
@@ -169,6 +174,7 @@ class HudApp:
             self.cfg["plan"],
             show_tokens=bool(self.cfg["show_tokens"]),
             show_cost=bool(self.cfg["show_cost"]),
+            show_burnrate=bool(self.cfg["show_burnrate"]),
             display_mode=str(self.cfg["display_mode"]),
         )
         self._update_tooltip()

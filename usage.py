@@ -79,6 +79,9 @@ class Snapshot:
     week_minutes_sonnet: float = 0.0
     week_minutes_haiku: float = 0.0
     week_reset_at: datetime | None = None  # rolling 7d reset point
+    # burn rate over the active session (averaged from session_start to now)
+    session_msg_per_hour: float = 0.0
+    session_tok_per_hour: float = 0.0
 
 
 def _decode_project_dir(name: str) -> str:
@@ -236,6 +239,16 @@ def compute(now: datetime | None = None) -> Snapshot:
         if e.ts >= week_start:
             week.add(e)
 
+    # Session-average burn rate. Need at least 60s elapsed before the rate is
+    # meaningful — below that, one or two messages give wildly noisy numbers.
+    msg_per_hour = 0.0
+    tok_per_hour = 0.0
+    if session_active and session_start is not None:
+        elapsed_h = (now - session_start).total_seconds() / 3600.0
+        if elapsed_h >= (60 / 3600):
+            msg_per_hour = session.messages / elapsed_h
+            tok_per_hour = session.total_tokens / elapsed_h
+
     active = _active_minutes_by_family(entries, week_start)
     # Rolling 7-day window: it "resets" continuously. We surface the moment
     # the oldest minute drops off — i.e. earliest-in-window timestamp + 7d.
@@ -255,6 +268,8 @@ def compute(now: datetime | None = None) -> Snapshot:
         week_minutes_sonnet=active["sonnet"],
         week_minutes_haiku=active["haiku"],
         week_reset_at=week_reset_at,
+        session_msg_per_hour=msg_per_hour,
+        session_tok_per_hour=tok_per_hour,
     )
 
 
