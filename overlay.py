@@ -200,26 +200,30 @@ class Overlay(QWidget):
         self.tok_lbl.setVisible(show_tokens)
         self.cost_lbl.setVisible(show_cost)
 
-        # burn rate
-        show_burn = show_burnrate and snap.session_active and snap.session_msg_per_hour > 0
+        # Burn rate as a pace multiplier: 1.0 = on pace to hit exactly the cap
+        # at reset; 0.5 = half pace; 1.5 = will blow through the cap at 3h 20m
+        # into the 5h window. Needs both a cap and a non-trivial elapsed time
+        # to be meaningful.
+        show_burn = (show_burnrate and snap.session_active
+                     and cap and snap.session_start and snap.session_reset)
+        if show_burn:
+            elapsed_h = (snap.now - snap.session_start).total_seconds() / 3600.0
+            show_burn = elapsed_h >= (60 / 3600)  # at least one minute
         self.burn_lbl.setVisible(show_burn)
         self.burn_proj_lbl.setVisible(show_burn)
         if show_burn:
-            rate = snap.session_msg_per_hour
-            self.burn_lbl.setText(f"burn  {rate:.0f} msg/h")
-            if cap and snap.session_reset:
-                remaining_h = (snap.session_reset - snap.now).total_seconds() / 3600.0
-                projected_msgs = snap.session.messages + rate * remaining_h
-                proj_pct = int(projected_msgs / cap * 100)
-                colour = "#a6e3a1"                  # green
-                if proj_pct >= 100:
-                    colour = "#f38ba8"              # red
-                elif proj_pct >= 80:
-                    colour = "#f9e2af"              # amber
-                self.burn_proj_lbl.setText(f"proj  {proj_pct}%")
-                self.burn_proj_lbl.setStyleSheet(f"color: {colour};")
-            else:
-                self.burn_proj_lbl.setText("")
+            window_h = (snap.session_reset - snap.session_start).total_seconds() / 3600.0
+            usage_frac = snap.session.messages / cap
+            elapsed_frac = elapsed_h / window_h
+            burn = usage_frac / elapsed_frac if elapsed_frac > 0 else 0.0
+            colour = "#a6e3a1"                  # green: under pace
+            if burn >= 1.5:
+                colour = "#f38ba8"              # red: 1.5× +
+            elif burn >= 1.0:
+                colour = "#f9e2af"              # amber: above pace
+            self.burn_lbl.setText(f"burn  {burn:.2f}×")
+            self.burn_lbl.setStyleSheet(f"color: {colour};")
+            self.burn_proj_lbl.setText(f"{snap.session_msg_per_hour:.0f} msg/h")
 
         self.adjustSize()
 
