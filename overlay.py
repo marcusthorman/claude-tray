@@ -31,7 +31,7 @@ from PySide6.QtWidgets import (
 from pricing import PLAN_LIMITS
 from usage import Snapshot, fmt_duration, fmt_tokens
 
-HUD_WIDTH = 300
+HUD_WIDTH = 380
 MARGIN = 14
 
 
@@ -120,7 +120,7 @@ class Overlay(QWidget):
         bar.setObjectName("HudBar")
         trail = QLabel("—")
         trail.setObjectName("HudRowTrail")
-        trail.setMinimumWidth(88)
+        trail.setMinimumWidth(64)
         trail.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         row.addWidget(lead, 0, Qt.AlignVCenter)
         row.addWidget(bar, 1)
